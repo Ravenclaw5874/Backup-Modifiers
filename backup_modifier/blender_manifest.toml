@@ -1,0 +1,10 @@
+schema_version = "1.0.0"
+id = "backup_modifiers"
+version = "1.0.2"
+name = "Backup Modifiers"
+tagline = "Apply modifiers with a backup. Easily switch to backup object"
+maintainer = "R4V3N"
+type = "add-on"
+blender_version_min = "4.2.0"
+license = ["SPDX:GPL-3.0-or-later"]
+tags = ["Object"]
