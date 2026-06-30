@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Backup Modifiers",
     "author": "R4V3N",
-    "version": (1, 0, 2),
+    "version": (1, 0, 3),
     "blender": (3, 0, 0),
     "location": "Properties > Modifiers",
     "description": "Apply modifiers with a backup. Easily switch to backup object",
@@ -9,18 +9,21 @@ bl_info = {
 }
 
 import bpy
-import uuid
 
 # 메타볼(META) 제외: 모디파이어를 지원하는 지오메트리만 남김.
 VALID_TYPES = {'MESH', 'CURVE', 'FONT', 'SURFACE'}
 
-# --- 유틸리티: UUID로 오브젝트 찾기 ---
-def get_obj_by_uuid(uuid_str):
-    if not uuid_str:
-        return None
-    for obj in bpy.data.objects:
-        if obj.mod_backup_uuid == uuid_str:
-            return obj
+# --- 유틸리티: 오브젝트 링크 찾기 (PointerProperty) ---
+def get_orig_obj(obj):
+    if obj.mod_backup_orig_obj:
+        if obj.mod_backup_orig_obj.mod_backup_applied_obj == obj:
+            return obj.mod_backup_orig_obj
+    return None
+
+def get_applied_obj(obj):
+    if obj.mod_backup_applied_obj:
+        if obj.mod_backup_applied_obj.mod_backup_orig_obj == obj:
+            return obj.mod_backup_applied_obj
     return None
 
 # --- 유틸리티: 콜렉션 스위칭 및 가시성 제어 ---
@@ -83,16 +86,9 @@ class OBJECT_OT_modifier_backup_apply(bpy.types.Operator):
 
         current_obj = context.active_object
 
-        if not current_obj.mod_backup_uuid:
-            current_obj.mod_backup_uuid = uuid.uuid4().hex
-
         # 1. [업데이트 모드] 적용본(Mesh)이 이미 존재하는 경우
-        if current_obj.mod_backup_applied_uuid:
-            applied_obj = get_obj_by_uuid(current_obj.mod_backup_applied_uuid)
-            
-            if not applied_obj:
-                current_obj.mod_backup_applied_uuid = "" 
-            else:
+        applied_obj = get_applied_obj(current_obj)
+        if applied_obj:
                 depsgraph = context.evaluated_depsgraph_get()
                 eval_obj = current_obj.evaluated_get(depsgraph)
                 new_mesh = bpy.data.meshes.new_from_object(
@@ -113,7 +109,7 @@ class OBJECT_OT_modifier_backup_apply(bpy.types.Operator):
                 return {'FINISHED'}
 
         # 2. [생성 모드] 처음 적용본을 만드는 경우
-        if not current_obj.mod_backup_applied_uuid:
+        if not get_applied_obj(current_obj):
             
             if current_obj.type == 'MESH':
                 depsgraph = context.evaluated_depsgraph_get()
@@ -144,14 +140,12 @@ class OBJECT_OT_modifier_backup_apply(bpy.types.Operator):
                 applied_obj.select_set(True)
                 context.view_layer.objects.active = applied_obj
                 
-                bpy.ops.object.convert(target='MESH')
+            bpy.ops.object.convert(target='MESH')
             
-            new_applied_uuid = uuid.uuid4().hex
-            applied_obj.mod_backup_uuid = new_applied_uuid
-            applied_obj.mod_backup_orig_uuid = current_obj.mod_backup_uuid
-            applied_obj.mod_backup_applied_uuid = ""
+            # Use PointerProperty for robust linking
+            current_obj.mod_backup_applied_obj = applied_obj
+            applied_obj.mod_backup_orig_obj = current_obj
             
-            current_obj.mod_backup_applied_uuid = new_applied_uuid
             applied_obj.matrix_world = current_obj.matrix_world.copy()
 
             swap_objects_and_collections(current_obj, applied_obj, context)
@@ -177,10 +171,11 @@ class OBJECT_OT_modifier_backup_go_original(bpy.types.Operator):
             bpy.ops.object.mode_set(mode='OBJECT')
 
         current_obj = context.active_object
-        if not current_obj.mod_backup_orig_uuid:
+        orig_obj = get_orig_obj(current_obj)
+        
+        if not orig_obj:
             return {'CANCELLED'}
 
-        orig_obj = get_obj_by_uuid(current_obj.mod_backup_orig_uuid)
         if orig_obj:
             orig_obj.matrix_world = current_obj.matrix_world.copy()
             swap_objects_and_collections(current_obj, orig_obj, context)
@@ -206,10 +201,11 @@ class OBJECT_OT_modifier_backup_go_applied(bpy.types.Operator):
             bpy.ops.object.mode_set(mode='OBJECT')
 
         current_obj = context.active_object
-        if not current_obj.mod_backup_applied_uuid:
+        applied_obj = get_applied_obj(current_obj)
+        
+        if not applied_obj:
             return {'CANCELLED'}
             
-        applied_obj = get_obj_by_uuid(current_obj.mod_backup_applied_uuid)
         if applied_obj:
             applied_obj.matrix_world = current_obj.matrix_world.copy()
             swap_objects_and_collections(current_obj, applied_obj, context)
@@ -234,8 +230,8 @@ class PROPERTIES_PT_modifier_backup(bpy.types.Panel):
         if not obj or obj.type not in VALID_TYPES:
             return
 
-        has_orig = bool(obj.mod_backup_orig_uuid)
-        has_applied = bool(obj.mod_backup_applied_uuid)
+        has_orig = bool(get_orig_obj(obj))
+        has_applied = bool(get_applied_obj(obj))
         has_modifiers = len(obj.modifiers) > 0
 
         # 모든 버튼을 한 줄(Row)에 배치
@@ -272,18 +268,16 @@ def register():
     for cls in classes:
         bpy.utils.register_class(cls)
         
-    bpy.types.Object.mod_backup_uuid = bpy.props.StringProperty()
-    bpy.types.Object.mod_backup_orig_uuid = bpy.props.StringProperty()
-    bpy.types.Object.mod_backup_applied_uuid = bpy.props.StringProperty()
+    bpy.types.Object.mod_backup_orig_obj = bpy.props.PointerProperty(type=bpy.types.Object)
+    bpy.types.Object.mod_backup_applied_obj = bpy.props.PointerProperty(type=bpy.types.Object)
     bpy.types.Collection.mod_backup_col_marker = bpy.props.StringProperty()
 
 def unregister():
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
         
-    del bpy.types.Object.mod_backup_uuid
-    del bpy.types.Object.mod_backup_orig_uuid
-    del bpy.types.Object.mod_backup_applied_uuid
+    del bpy.types.Object.mod_backup_orig_obj
+    del bpy.types.Object.mod_backup_applied_obj
     del bpy.types.Collection.mod_backup_col_marker
 
 if __name__ == "__main__":
