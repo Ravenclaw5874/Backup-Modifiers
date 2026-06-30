@@ -1,6 +1,6 @@
 schema_version = "1.0.0"
 id = "backup_modifiers"
-version = "1.0.3"
+version = "1.0.4"
 name = "Backup Modifiers"
 tagline = "Apply modifiers with a backup. Easily switch to backup object"
 maintainer = "R4V3N"

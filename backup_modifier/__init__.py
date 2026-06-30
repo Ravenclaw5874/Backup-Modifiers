@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Backup Modifiers",
     "author": "R4V3N",
-    "version": (1, 0, 3),
+    "version": (1, 0, 4),
     "blender": (3, 0, 0),
     "location": "Properties > Modifiers",
     "description": "Apply modifiers with a backup. Easily switch to backup object",
@@ -140,7 +140,7 @@ class OBJECT_OT_modifier_backup_apply(bpy.types.Operator):
                 applied_obj.select_set(True)
                 context.view_layer.objects.active = applied_obj
                 
-            bpy.ops.object.convert(target='MESH')
+                bpy.ops.object.convert(target='MESH')
             
             # Use PointerProperty for robust linking
             current_obj.mod_backup_applied_obj = applied_obj
